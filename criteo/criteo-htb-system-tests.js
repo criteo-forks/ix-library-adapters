@@ -1,3 +1,5 @@
+'use strict';
+
 function getPartnerId() {
     return 'CriteoHtb';
 }
@@ -35,28 +37,27 @@ function getConfig() {
 }
 
 function validateBidRequest(request) {
-    expect(request.host).toBe("bidder.criteo.com");
-    expect(request.protocol).toBe("https:");
+    expect(request.host).toBe('bidder.criteo.com');
+    expect(request.protocol).toBe('https:');
 
     expect(request.query.profileId).toBe('154');
     expect(request.query.av).toBe('1');
     expect(request.query.wv).toBe('index');
     expect(request.query.cb).toBeDefined();
 
-    const body = JSON.parse(request.body);
+    var body = JSON.parse(request.body);
 
     expect(body.publisher.url).toBeDefined();
     expect(body.slots.length).toBe(2);
 
-    expect(body.slots[0].zoneid).toBe("123");
-    expect(body.slots[1].zoneid).toBe("456");
+    expect(body.slots[0].zoneid).toBe('123');
+    expect(body.slots[1].zoneid).toBe('456');
 }
 
-
 function getValidResponse(request, creative) {
-    const slotsFromRequest = JSON.parse(request.body).slots;
+    var slotsFromRequest = JSON.parse(request.body).slots;
     var response = {
-        slots: slotsFromRequest.map(slot => {
+        slots: slotsFromRequest.map(function (slot) {
             return {
                 impid: slot.impid,
                 zoneid: slot.zoneid,
@@ -64,9 +65,10 @@ function getValidResponse(request, creative) {
                 height: 250,
                 cpm: 2,
                 creative: creative
-            }
+            };
         })
     };
+
     return JSON.stringify(response);
 }
 
@@ -78,18 +80,19 @@ function validateTargeting(targetingMap) {
 }
 
 function getPassResponse(request) {
-    const slotsFromRequest = JSON.parse(request.body).slots;
+    var slotsFromRequest = JSON.parse(request.body).slots;
     var response = {
-        slots: slotsFromRequest.map(slot => {
+        slots: slotsFromRequest.map(function (slot) {
             return {
                 impid: slot.impid,
                 zoneid: slot.zoneid,
                 width: 300,
                 height: 250,
-                cpm: 0,
-            }
+                cpm: 0
+            };
         })
     };
+
     return JSON.stringify(response);
 }
 

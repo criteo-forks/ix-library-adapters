@@ -11,10 +11,8 @@ var Partner = require('partner.js');
 var Size = require('size.js');
 var SpaceCamp = require('space-camp.js');
 var System = require('system.js');
-var Network = require('network.js');
 var Utilities = require('utilities.js');
 
-var ComplianceService;
 var RenderService;
 
 //? if (DEBUG) {
@@ -34,52 +32,54 @@ var Whoopsie = require('whoopsie.js');
  * @class
  */
 function CriteoHtb(configs) {
-    const CDB_ENDPOINT = 'https://bidder.criteo.com/cdb';
-    const PROFILE_ID_INLINE = 154;
-    const ADAPTER_VERSION = 1;
+    var CDB_ENDPOINT = 'https://bidder.criteo.com/cdb';
+    var PROFILE_ID_INLINE = 154;
+    var ADAPTER_VERSION = 1;
 
     var __baseClass;
     var __profile;
 
     function parseQS(query) {
         return !query ? {} : query
-        .replace(/^\?/, '')
-        .split('&')
-        .reduce((acc, criteria) => {
-            let [k, v] = criteria.split('=');
-            if (/\[\]$/.test(k)) {
-              k = k.replace('[]', '');
-              acc[k] = acc[k] || [];
-              acc[k].push(v);
-            } else {
-              acc[k] = v || '';
-            }
-            return acc;
-        }, {});
+            .replace(/^\?/, '')
+            .split('&')
+            .reduce(function (acc, criteria) {
+                var splited = criteria.split('=');
+                if (/\[\]$/.test(splited[0])) {
+                    splited[0] = splited[0].replace('[]', '');
+                    acc[splited[0]] = acc[splited[0]] || [];
+                    acc[splited[0]].push(splited[1]);
+                } else {
+                    acc[splited[0]] = splited[1] || '';
+                }
+
+                return acc;
+            }, {});
     }
 
     function buildContext() {
-        const pageUrl = document.createElement('a');
+        var pageUrl = document.createElement('a');
         pageUrl.href = Browser.getPageUrl();
-        const queryString = parseQS(pageUrl.search || '');
+        var queryString = parseQS(pageUrl.search || '');
 
         return {
             url: pageUrl.href,
-            debug: queryString['pbt_debug'] === '1',
-            noLog: queryString['pbt_nolog'] === '1'
+            debug: queryString.pbt_debug === '1',
+            noLog: queryString.pbt_nolog === '1'
         };
     }
 
     function buildCdbUrl(context) {
-        let url = CDB_ENDPOINT;
+        var url = CDB_ENDPOINT;
         url += '?profileId=' + String(PROFILE_ID_INLINE);
         url += '&av=' + String(ADAPTER_VERSION);
-        url += '&wv=index'
+        url += '&wv=index';
         url += '&cb=' + String(Math.floor(Math.random() * 99999999999));
 
         if (context.debug) {
             url += '&debug=1';
         }
+
         if (context.noLog) {
             url += '&nolog=1';
         }
@@ -88,21 +88,21 @@ function CriteoHtb(configs) {
     }
 
     function buildCdbRequest(context, parcels) {
-        const slots = [];
+        var slots = [];
 
-        parcels.forEach(parcel => {
-            if(parcel.xSlotRef && parcel.xSlotRef.zoneId) {
-                const slot = {
+        parcels.forEach(function (parcel) {
+            if (parcel.xSlotRef && parcel.xSlotRef.zoneId) {
+                var slot = {
                     impid: parcel.htSlot.getName(),
                     zoneid: parcel.xSlotRef.zoneId
                 };
-               slots.push(slot);
+                slots.push(slot);
             }
-        })
+        });
 
-        const request = {
+        var request = {
             publisher: {
-                url: context.url,
+                url: context.url
             },
             slots: slots
         };
@@ -119,22 +119,20 @@ function CriteoHtb(configs) {
      * @return {object}
      */
     function __generateRequestObj(returnParcels) {
-        let url;
-        let data;
-        
-        const context = buildContext();
+        var url;
+        var data;
+
+        var context = buildContext();
         url = buildCdbUrl(context);
         data = buildCdbRequest(context, returnParcels);
-        
-        if (data) {
-            return {
-                url: url,
-                data: data,
-                networkParamOverrides: {
-                    method: 'POST'
-                }
-            };
-        }
+
+        return {
+            url: url,
+            data: data,
+            networkParamOverrides: {
+                method: 'POST'
+            }
+        };
     }
 
     function buildHeaderStatsInfo(parcel) {
@@ -142,12 +140,13 @@ function CriteoHtb(configs) {
         var htSlotId = parcel.htSlot.getId();
         headerStatsInfo[htSlotId] = {};
         headerStatsInfo[htSlotId][parcel.requestId] = [parcel.xSlotName];
+
         return headerStatsInfo;
     }
 
     function passParcel(sessionId, parcel) {
         //? if (DEBUG) {
-        Scribe.info(__profile.partnerId + ' returned pass for { id: ' + adResponse.id + ' }.');
+        Scribe.info(__profile.partnerId + ' returned pass for { ' + parcel.xSlotName + ' }.');
         //? }
         if (__profile.enabledAnalytics.requestTime) {
             __baseClass._emitStatsEvent(sessionId, 'hs_slot_pass', buildHeaderStatsInfo(parcel));
@@ -158,7 +157,7 @@ function CriteoHtb(configs) {
     function bidParcel(sessionId, slot, parcel) {
         if (__profile.enabledAnalytics.requestTime) {
             __baseClass._emitStatsEvent(sessionId, 'hs_slot_bid', buildHeaderStatsInfo(parcel));
-        }       
+        }
 
         parcel.size = [Number(slot.width), Number(slot.height)];
         parcel.targetingType = 'slot';
@@ -167,8 +166,8 @@ function CriteoHtb(configs) {
         var bidCpm = Number(slot.cpm);
 
         //? if(FEATURES.GPT_LINE_ITEMS) {
-        const sizeKey = Size.arrayToString(parcel.size);
-        const targetingCpm = __baseClass._bidTransformers.targeting.apply(bidCpm);
+        var sizeKey = Size.arrayToString(parcel.size);
+        var targetingCpm = __baseClass._bidTransformers.targeting.apply(bidCpm);
 
         parcel.targeting[__baseClass._configs.targetingKeys.om] = [sizeKey + '_' + targetingCpm];
         parcel.targeting[__baseClass._configs.targetingKeys.id] = [parcel.requestId];
@@ -182,6 +181,7 @@ function CriteoHtb(configs) {
         parcel.price = Number(__baseClass._bidTransformers.price.apply(bidCpm));
         //? }
 
+        var profileFeaturesExpiry = __profile.features.demandExpiry;
         var pubKitAdId = RenderService.registerAd({
             sessionId: sessionId,
             partnerId: __profile.partnerId,
@@ -189,11 +189,11 @@ function CriteoHtb(configs) {
             requestId: parcel.requestId,
             size: parcel.size,
             price: targetingCpm,
-            timeOfExpiry: __profile.features.demandExpiry.enabled ? (__profile.features.demandExpiry.value + System.now()) : 0
+            timeOfExpiry: profileFeaturesExpiry.enabled ? profileFeaturesExpiry.value + System.now() : 0
         });
 
         //? if(FEATURES.INTERNAL_RENDER) {
-        curReturnParcel.targeting.pubKitAdId = pubKitAdId;
+        parcel.targeting.pubKitAdId = pubKitAdId;
         //? }
     }
 
@@ -205,23 +205,28 @@ function CriteoHtb(configs) {
             var parcel = returnParcels[parcelIndex];
 
             if (adResponse && adResponse.slots && Utilities.isArray(adResponse.slots)) {
-                var slot = undefined;
-                for(var slotIndex = 0; slotIndex < adResponse.slots.length; slotIndex++) {
-                    if(parcel.htSlot.getName() === adResponse.slots[slotIndex].impid && parcel.xSlotRef.zoneId && parcel.xSlotRef.zoneId == adResponse.slots[slotIndex].zoneid) {
+                var slot;
+                for (var slotIndex = 0; slotIndex < adResponse.slots.length; slotIndex++) {
+                    if (parcel.htSlot.getName() === adResponse.slots[slotIndex].impid
+                        && parcel.xSlotRef.zoneId
+                        && Number(parcel.xSlotRef.zoneId) === Number(adResponse.slots[slotIndex].zoneid)) {
                         slot = adResponse.slots[slotIndex];
+
                         break;
                     }
                 }
 
-                if(!slot) {
+                if (!slot) {
                     passParcels.push(parcel);
+
                     continue;
                 }
 
                 var bidCpm = Number(slot.cpm);
-                
+
                 if (!Utilities.isNumber(bidCpm) || bidCpm <= 0) {
                     passParcels.push(parcel);
+
                     continue;
                 }
 
@@ -239,14 +244,18 @@ function CriteoHtb(configs) {
     }
 
     function __parseResponse(sessionId, adResponse, returnParcels) {
-        const parcelDistributed = distributeParcels(adResponse, returnParcels);
+        var parcelDistributed = distributeParcels(adResponse, returnParcels);
 
-        for (var parcelIndex = 0; parcelIndex < parcelDistributed.passParcels.length; parcelIndex++) {
-            passParcel(sessionId, parcelDistributed.passParcels[parcelIndex]);
+        for (var passParcelIndex = 0; passParcelIndex < parcelDistributed.passParcels.length; passParcelIndex++) {
+            passParcel(sessionId, parcelDistributed.passParcels[passParcelIndex]);
         }
 
-        for (var parcelIndex = 0; parcelIndex < parcelDistributed.bidWithParcels.length; parcelIndex++) {
-            bidParcel(sessionId, parcelDistributed.bidWithParcels[parcelIndex].slot, parcelDistributed.bidWithParcels[parcelIndex].parcel);
+        for (var bidWithParcelIndex = 0;
+            bidWithParcelIndex < parcelDistributed.bidWithParcels.length;
+            bidWithParcelIndex++) {
+            bidParcel(sessionId,
+                parcelDistributed.bidWithParcels[bidWithParcelIndex].slot,
+                parcelDistributed.bidWithParcels[bidWithParcelIndex].parcel);
         }
     }
 
@@ -255,7 +264,6 @@ function CriteoHtb(configs) {
      * ---------------------------------- */
 
     (function __constructor() {
-        ComplianceService = SpaceCamp.services.ComplianceService;
         RenderService = SpaceCamp.services.RenderService;
 
         /* =============================================================================
@@ -288,7 +296,7 @@ function CriteoHtb(configs) {
 
             targetingKeys: {
                 id: 'ix_cdb_id',
-                om: 'ix_cdb_om',
+                om: 'ix_cdb_om'
             },
 
             bidUnitInCents: 100,
