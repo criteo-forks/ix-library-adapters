@@ -137,13 +137,72 @@ function CriteoHtb(configs) {
         }
     }
 
-    function __parseResponse(sessionId, adResponse, returnParcels) {
+    function buildHeaderStatsInfo(parcel) {
+        var headerStatsInfo = {};
+        var htSlotId = parcel.htSlot.getId();
+        headerStatsInfo[htSlotId] = {};
+        headerStatsInfo[htSlotId][parcel.requestId] = [parcel.xSlotName];
+        return headerStatsInfo;
+    }
+
+    function passParcel(sessionId, parcel) {
+        //? if (DEBUG) {
+        Scribe.info(__profile.partnerId + ' returned pass for { id: ' + adResponse.id + ' }.');
+        //? }
+        if (__profile.enabledAnalytics.requestTime) {
+            __baseClass._emitStatsEvent(sessionId, 'hs_slot_pass', buildHeaderStatsInfo(parcel));
+        }
+        parcel.pass = true;
+    }
+
+    function bidParcel(sessionId, slot, parcel) {
+        if (__profile.enabledAnalytics.requestTime) {
+            __baseClass._emitStatsEvent(sessionId, 'hs_slot_bid', buildHeaderStatsInfo(parcel));
+        }       
+
+        parcel.size = [Number(slot.width), Number(slot.height)];
+        parcel.targetingType = 'slot';
+        parcel.targeting = {};
+
+        var bidCpm = Number(slot.cpm);
+
+        //? if(FEATURES.GPT_LINE_ITEMS) {
+        const sizeKey = Size.arrayToString(parcel.size);
+        const targetingCpm = __baseClass._bidTransformers.targeting.apply(bidCpm);
+
+        parcel.targeting[__baseClass._configs.targetingKeys.om] = [sizeKey + '_' + targetingCpm];
+        parcel.targeting[__baseClass._configs.targetingKeys.id] = [parcel.requestId];
+        //? }
+
+        //? if(FEATURES.RETURN_CREATIVE) {
+        parcel.adm = slot.creative;
+        //? }
+
+        //? if(FEATURES.RETURN_PRICE) {
+        parcel.price = Number(__baseClass._bidTransformers.price.apply(bidCpm));
+        //? }
+
+        var pubKitAdId = RenderService.registerAd({
+            sessionId: sessionId,
+            partnerId: __profile.partnerId,
+            adm: slot.creative,
+            requestId: parcel.requestId,
+            size: parcel.size,
+            price: targetingCpm,
+            timeOfExpiry: __profile.features.demandExpiry.enabled ? (__profile.features.demandExpiry.value + System.now()) : 0
+        });
+
+        //? if(FEATURES.INTERNAL_RENDER) {
+        curReturnParcel.targeting.pubKitAdId = pubKitAdId;
+        //? }
+    }
+
+    function distributeParcels(adResponse, returnParcels) {
+        var passParcels = [];
+        var bidWithParcels = [];
+
         for (var parcelIndex = 0; parcelIndex < returnParcels.length; parcelIndex++) {
             var parcel = returnParcels[parcelIndex];
-            var headerStatsInfo = {};
-            var htSlotId = parcel.htSlot.getId();
-            headerStatsInfo[htSlotId] = {};
-            headerStatsInfo[htSlotId][parcel.requestId] = [parcel.xSlotName];
 
             if (adResponse && adResponse.slots && Utilities.isArray(adResponse.slots)) {
                 var slot = undefined;
@@ -155,64 +214,39 @@ function CriteoHtb(configs) {
                 }
 
                 if(!slot) {
-                    if (__profile.enabledAnalytics.requestTime) {
-                        __baseClass._emitStatsEvent(sessionId, 'hs_slot_pass', headerStatsInfo);
-                    }        
-                    parcel.pass = true;
+                    passParcels.push(parcel);
                     continue;
                 }
 
                 var bidCpm = Number(slot.cpm);
                 
                 if (!Utilities.isNumber(bidCpm) || bidCpm <= 0) {
-                    //? if (DEBUG) {
-                    Scribe.info(__profile.partnerId + ' returned pass for { id: ' + adResponse.id + ' }.');
-                    //? }
-                    if (__profile.enabledAnalytics.requestTime) {
-                        __baseClass._emitStatsEvent(sessionId, 'hs_slot_pass', headerStatsInfo);
-                    }
-                    parcel.pass = true;
+                    passParcels.push(parcel);
                     continue;
                 }
 
-                if (__profile.enabledAnalytics.requestTime) {
-                    __baseClass._emitStatsEvent(sessionId, 'hs_slot_bid', headerStatsInfo);
-                }       
-
-                parcel.size = [Number(slot.width), Number(slot.height)];
-                parcel.targetingType = 'slot';
-                parcel.targeting = {};
-
-                //? if(FEATURES.GPT_LINE_ITEMS) {
-                const sizeKey = Size.arrayToString(parcel.size);
-                const targetingCpm = __baseClass._bidTransformers.targeting.apply(bidCpm);
-
-                parcel.targeting[__baseClass._configs.targetingKeys.om] = [sizeKey + '_' + targetingCpm];
-                parcel.targeting[__baseClass._configs.targetingKeys.id] = [parcel.requestId];
-                //? }
-
-                //? if(FEATURES.RETURN_CREATIVE) {
-                parcel.adm = slot.creative;
-                //? }
-
-                //? if(FEATURES.RETURN_PRICE) {
-                parcel.price = Number(__baseClass._bidTransformers.price.apply(bidCpm));
-                //? }
-
-                var pubKitAdId = RenderService.registerAd({
-                    sessionId: sessionId,
-                    partnerId: __profile.partnerId,
-                    adm: slot.creative,
-                    requestId: parcel.requestId,
-                    size: parcel.size,
-                    price: targetingCpm,
-                    timeOfExpiry: __profile.features.demandExpiry.enabled ? (__profile.features.demandExpiry.value + System.now()) : 0
+                bidWithParcels.push({
+                    slot: slot,
+                    parcel: parcel
                 });
-
-                //? if(FEATURES.INTERNAL_RENDER) {
-                curReturnParcel.targeting.pubKitAdId = pubKitAdId;
-                //? }
             }
+        }
+
+        return {
+            passParcels: passParcels,
+            bidWithParcels: bidWithParcels
+        };
+    }
+
+    function __parseResponse(sessionId, adResponse, returnParcels) {
+        const parcelDistributed = distributeParcels(adResponse, returnParcels);
+
+        for (var parcelIndex = 0; parcelIndex < parcelDistributed.passParcels.length; parcelIndex++) {
+            passParcel(sessionId, parcelDistributed.passParcels[parcelIndex]);
+        }
+
+        for (var parcelIndex = 0; parcelIndex < parcelDistributed.bidWithParcels.length; parcelIndex++) {
+            bidParcel(sessionId, parcelDistributed.bidWithParcels[parcelIndex].slot, parcelDistributed.bidWithParcels[parcelIndex].parcel);
         }
     }
 
