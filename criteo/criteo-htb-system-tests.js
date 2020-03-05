@@ -19,7 +19,7 @@ function getArchitecture() {
 function getBidRequestRegex() {
     return {
         method: 'POST',
-        urlRegex: /bidder\.criteo\.com*/
+        urlRegex: /(bidder\.criteo\.com*)|(directbidder-test-app\.par\.preprod\.crto\.in*)/
     };
 }
 
@@ -37,7 +37,7 @@ function getConfig() {
 }
 
 function validateBidRequest(request) {
-    expect(request.host).toBe('bidder.criteo.com');
+    expect(['bidder.criteo.com', 'directbidder-test-app.par.preprod.crto.in']).toContain(request.host);
     expect(request.protocol).toBe('https:');
 
     expect(request.query.profileId).toBe('154');

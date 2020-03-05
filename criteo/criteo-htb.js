@@ -33,6 +33,7 @@ var Whoopsie = require('whoopsie.js');
  */
 function CriteoHtb(configs) {
     var CDB_ENDPOINT = 'https://bidder.criteo.com/cdb';
+    var PUBLISHER_TAG_URL = 'https://publisherdirect.criteo.com/publishertag/preprodtest/publishertag.index.js';
     var PROFILE_ID_INLINE = 154;
     var ADAPTER_VERSION = 1;
 
@@ -55,6 +56,50 @@ function CriteoHtb(configs) {
 
                 return acc;
             }, {});
+    }
+
+    function publisherTagAvailable() {
+        // eslint-disable-next-line no-undef
+        return typeof Criteo !== 'undefined' && Criteo.PubTag && Criteo.PubTag.Adapters && Criteo.PubTag.Adapters.Index;
+    }
+
+    function insertElement(element) {
+        var parentElement = document.getElementsByTagName('head');
+        try {
+            parentElement = parentElement.length ? parentElement : document.getElementsByTagName('body');
+            if (parentElement.length) {
+                parentElement = parentElement[0];
+                parentElement.insertBefore(element, parentElement.firstChild);
+            }
+        } catch (e) {
+        }
+    }
+
+    function tryGetCriteoFastBid() {
+        try {
+            var fastBidStorageKey = 'criteo_fast_bid_index';
+            var hashPrefix = '// Hash: ';
+            var fastBidFromStorage = localStorage.getItem(fastBidStorageKey);
+
+            if (fastBidFromStorage !== null) {
+                var firstLineEndPosition = fastBidFromStorage.indexOf('\n');
+                var firstLine = fastBidFromStorage.substr(0, firstLineEndPosition)
+                    .trim();
+
+                if (firstLine.substr(0, hashPrefix.length) !== hashPrefix) {
+                    localStorage.removeItem(fastBidStorageKey);
+                } else {
+                    var publisherTag = fastBidFromStorage.substr(firstLineEndPosition + 1);
+
+                    var script = document.createElement('script');
+                    script.type = 'text/javascript';
+                    script.text = publisherTag;
+                    insertElement(script);
+                }
+            }
+        } catch (e) {
+            // Unable to get fast bid
+        }
     }
 
     function buildContext() {
@@ -118,13 +163,33 @@ function CriteoHtb(configs) {
      *
      * @return {object}
      */
-    function __generateRequestObj(returnParcels) {
+    function __generateRequestObj(returnParcels, sessionId) {
         var url;
         var data;
 
         var context = buildContext();
-        url = buildCdbUrl(context);
-        data = buildCdbRequest(context, returnParcels);
+
+        if (!publisherTagAvailable()) {
+            tryGetCriteoFastBid();
+
+            setTimeout(function () {
+                var script = document.createElement('script');
+                script.type = 'text/javascript';
+                script.src = PUBLISHER_TAG_URL;
+                script.async = true;
+                insertElement(script);
+            }, SpaceCamp.globalTimeout || 1500);
+        }
+
+        if (publisherTagAvailable()) {
+            // eslint-disable-next-line no-undef
+            var adapter = new Criteo.PubTag.Adapters.Index(ADAPTER_VERSION, sessionId, returnParcels);
+            url = adapter.buildCdbUrl();
+            data = adapter.buildCdbRequest();
+        } else {
+            url = buildCdbUrl(context);
+            data = buildCdbRequest(context, returnParcels);
+        }
 
         return {
             url: url,
@@ -244,7 +309,19 @@ function CriteoHtb(configs) {
     }
 
     function __parseResponse(sessionId, adResponse, returnParcels) {
-        var parcelDistributed = distributeParcels(adResponse, returnParcels);
+        var parcelDistributed;
+
+        if (publisherTagAvailable()) {
+            // eslint-disable-next-line no-undef
+            var adapter = Criteo.PubTag.Adapters.Index.GetAdapter(sessionId);
+            if (adapter) {
+                parcelDistributed = adapter.parseResponse(adResponse, returnParcels);
+            }
+        }
+
+        if (!parcelDistributed) {
+            parcelDistributed = distributeParcels(adResponse, returnParcels);
+        }
 
         for (var passParcelIndex = 0; passParcelIndex < parcelDistributed.passParcels.length; passParcelIndex++) {
             passParcel(sessionId, parcelDistributed.passParcels[passParcelIndex]);
